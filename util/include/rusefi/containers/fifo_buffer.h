@@ -134,6 +134,14 @@ public:
 				return false;
 			}
 		}
+#else
+		// nothing can fill the queue while a unit test waits, so empty is the timeout case -
+		// returning true here would hand back a stale element as if it had just arrived
+		(void)timeout;
+		if (fifo_buffer<T, maxSize>::isEmpty()) {
+			chSysUnlock();
+			return false;
+		}
 #endif // EFI_UNIT_TEST
 		item = fifo_buffer<T, maxSize>::get();
 		chSysUnlock();
