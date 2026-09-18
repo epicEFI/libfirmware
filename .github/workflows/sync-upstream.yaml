@@ -1,0 +1,112 @@
+name: Sync upstream
+
+# Weekly: merge rusefi/libfirmware master into a sync/upstream branch, run the library tests on
+# the result, and open (or refresh) a PR - or an issue when the merge conflicts. Nothing here
+# touches master; a human merges the PR with "Create a merge commit". See EPIC_FORK.md.
+
+on:
+  schedule:
+    - cron: '23 6 * * 1'   # Mondays 06:23 UTC
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+  issues: write
+
+concurrency:
+  group: sync-upstream
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    runs-on: ubuntu-22.04
+    steps:
+    - uses: actions/checkout@v4
+      with:
+        ref: master
+        fetch-depth: 0
+        submodules: recursive
+
+    - name: Configure git
+      run: |
+        git config user.name "github-actions[bot]"
+        git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+    - name: Merge upstream and test
+      id: sync
+      # the script's exit code is carried in steps.sync.outputs.result; the steps below act on it
+      run: tools/sync_upstream.sh --ci || true
+
+    - name: Fail if the script died before reporting a result
+      if: steps.sync.outputs.result == ''
+      run: |
+        echo "tools/sync_upstream.sh failed before reporting a result - see the step above"
+        exit 1
+
+    - name: Push branch and open or refresh the PR
+      if: steps.sync.outputs.result == 'merged'
+      env:
+        GH_TOKEN: ${{ github.token }}
+        UPSTREAM_SHORT: ${{ steps.sync.outputs.upstream_short }}
+        NEW_COMMITS: ${{ steps.sync.outputs.new_commits }}
+        TESTS: ${{ steps.sync.outputs.tests }}
+      run: |
+        git push --force origin sync/upstream
+        {
+          echo "Merges rusefi/libfirmware master at \`$UPSTREAM_SHORT\` ($NEW_COMMITS new commit(s)) into our master."
+          echo
+          echo "Library tests on the merged tree (ASan + UBSan + float-cast-overflow): $TESTS"
+          echo
+          echo "**Merge with \"Create a merge commit\" - never squash or rebase** (EPIC_FORK.md)."
+          echo "Then bump \`firmware/libfirmware\` in epicefi_fw and run its checks there."
+          echo
+          echo "PRs opened by this workflow do not trigger the Unit Tests workflow; it runs on master after the merge."
+          echo
+          echo "### Upstream commits"
+          cat .sync_upstream_commits.txt
+        } > pr_body.md
+        title="Sync upstream rusefi/libfirmware $UPSTREAM_SHORT"
+        existing=$(gh pr list --head sync/upstream --base master --state open --json number --jq '.[0].number')
+        if [ -n "$existing" ]; then
+          gh pr edit "$existing" --title "$title" --body-file pr_body.md
+        elif ! gh pr create --base master --head sync/upstream --title "$title" --body-file pr_body.md; then
+          # The epicEFI org does not let GITHUB_TOKEN open PRs (Settings > Actions > General >
+          # "Allow GitHub Actions to create and approve pull requests"). Hand a human the link.
+          compare="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/compare/master...sync/upstream?expand=1"
+          { echo "**Open the PR:** $compare"; echo; cat pr_body.md; } > issue_body.md
+          open_issue=$(gh issue list --state open --search "in:title \"Sync upstream rusefi/libfirmware\"" --json number --jq '.[0].number')
+          if [ -n "$open_issue" ]; then
+            gh issue edit "$open_issue" --title "$title" --body-file issue_body.md
+          else
+            gh issue create --title "$title" --body-file issue_body.md
+          fi
+        fi
+
+    - name: Report a conflict or a test failure
+      if: steps.sync.outputs.result == 'conflict' || steps.sync.outputs.result == 'tests_failed'
+      env:
+        GH_TOKEN: ${{ github.token }}
+        RESULT: ${{ steps.sync.outputs.result }}
+        UPSTREAM_SHORT: ${{ steps.sync.outputs.upstream_short }}
+        CONFLICTS: ${{ steps.sync.outputs.conflicts }}
+      run: |
+        title="Upstream sync needs a human: $RESULT at rusefi/libfirmware $UPSTREAM_SHORT"
+        {
+          echo "The weekly sync could not produce a green merge: **$RESULT**."
+          [ -n "$CONFLICTS" ] && echo && echo "Conflicting files: \`$CONFLICTS\`"
+          echo
+          echo "Run \`tools/sync_upstream.sh\` locally - it leaves the conflicted merge in place to resolve. See EPIC_FORK.md."
+          echo
+          echo "### Upstream commits"
+          cat .sync_upstream_commits.txt 2>/dev/null || true
+          echo
+          echo "Run: $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
+        } > issue_body.md
+        existing=$(gh issue list --state open --search "in:title \"Upstream sync needs a human\"" --json number --jq '.[0].number')
+        if [ -n "$existing" ]; then
+          gh issue comment "$existing" --body-file issue_body.md
+        else
+          gh issue create --title "$title" --body-file issue_body.md
+        fi
+        exit 1

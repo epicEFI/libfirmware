@@ -2,3 +2,4 @@ build/
 .dep/
 .idea
 r
+.sync_upstream_*
