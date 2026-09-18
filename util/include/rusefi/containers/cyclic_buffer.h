@@ -40,6 +40,11 @@ class cyclic_buffer
     uint16_t currentIndex;
 
   protected:
+    // how many elements actually hold data - count keeps growing past size, the buffer does not
+    size_t storedCount() const {
+        return count < size ? count : size;
+    }
+
     uint16_t size;
     /**
      * number of elements added into this buffer, would be eventually bigger then size
@@ -75,7 +80,9 @@ void cyclic_buffer<T, maxSize>::add(T value) {
 // todo: something is weird see 'TEST(CyclicBuffer, Contains)' see https://github.com/rusefi/rusefi/issues/4455
 template<typename T, size_t maxSize>
 bool cyclic_buffer<T, maxSize>::contains(T value) const {
-	for (int i = 0; i < currentIndex ; i++) {
+	// every slot below storedCount() holds data - after a wrap that is all of them, not just
+	// the ones below currentIndex
+	for (size_t i = 0; i < storedCount(); i++) {
 		if (elements[i] == value) {
 			return true;
 		}
@@ -86,7 +93,8 @@ bool cyclic_buffer<T, maxSize>::contains(T value) const {
 template<typename T, size_t maxSize>
 void cyclic_buffer<T, maxSize>::setSize(size_t p_size) {
 	clear();
-	size = p_size < maxSize ? p_size : maxSize;
+	// a size of 0 would let add() walk straight off the end of elements[]
+	size = p_size < 1 ? 1 : (p_size < maxSize ? p_size : maxSize);
 }
 
 template<typename T, size_t maxSize>
@@ -112,9 +120,9 @@ T cyclic_buffer<T, maxSize>::get(int index) const {
 
 template<typename T, size_t maxSize>
 T cyclic_buffer<T, maxSize>::maxValue(size_t length) const {
-	if (length > count) {
-		// not enough data in buffer
-		length = count;
+	if (length > storedCount()) {
+		// not enough data in buffer - and never more than one lap, or elements count twice
+		length = storedCount();
 	}
 	int ci = currentIndex; // local copy to increase thread-safety
 	T result = std::numeric_limits<T>::min();
@@ -133,8 +141,8 @@ T cyclic_buffer<T, maxSize>::maxValue(size_t length) const {
 
 template<typename T, size_t maxSize>
 T cyclic_buffer<T, maxSize>::minValue(size_t length) const {
-	if (length > count) {
-		length = count;
+	if (length > storedCount()) {
+		length = storedCount();
 	}
 	int ci = currentIndex; // local copy to increase thread-safety
 	T result = std::numeric_limits<T>::max();
@@ -153,8 +161,8 @@ T cyclic_buffer<T, maxSize>::minValue(size_t length) const {
 
 template<typename T, size_t maxSize>
 T cyclic_buffer<T, maxSize>::sum(size_t length) const {
-	if (length > count) {
-		length = count;
+	if (length > storedCount()) {
+		length = storedCount();
 	}
 
 	int ci = currentIndex; // local copy to increase thread-safety
