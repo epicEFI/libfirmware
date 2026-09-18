@@ -23,9 +23,10 @@ bool Timer::hasElapsedMs(float const milliseconds) const {
 }
 
 bool Timer::hasElapsedUs(float const microseconds) const {
-	// Like past has already passed...
-	if (microseconds <= 0) {
-		return true;;
+	// Like past has already passed... NaN lands here too: it always read as elapsed in
+	// practice, since its float->uint32 cast below gave 0 on both ARM and x86.
+	if (!(microseconds > 0)) {
+		return true;
 	}
 
 	efitick_t const delta{ getTimeNowNt() - m_lastReset };
@@ -37,19 +38,25 @@ bool Timer::hasElapsedUs(float const microseconds) const {
 		return false;
 	}
 
-	// If larger than 32 bits, timer has certainly expired
-	if (delta >= UINT32_MAX) {
-		return true;
+	float const thresholdNt{ USF2NT(microseconds) };
+
+	// 2^32 is exact in float, and the largest float below it (2^32 - 256) still fits the cast
+	if (thresholdNt < 4294967296.f) {
+		// If larger than 32 bits, timer has certainly expired
+		if (delta >= UINT32_MAX) {
+			return true;
+		}
+
+		return static_cast<uint32_t>(delta) > static_cast<uint32_t>(thresholdNt);
 	}
 
-	constexpr float max_32_bit_fit_float{ 4294967295.f };
-
-	if (microseconds >= max_32_bit_fit_float) {
-		auto const ntDouble{ static_cast<double>(microseconds) * US_TO_NT_MULTIPLIER };
-		return delta > static_cast<efitick_t>(ntDouble);
-	}
-
-	return static_cast<uint32_t>(delta) > static_cast<uint32_t>(USF2NT(microseconds));
+	// The threshold itself needs more than 32 bits of ticks: past ~1074 s at a 4 MHz tick, past
+	// ~43 s on the unit-test clock. Casting it to uint32 is undefined behaviour - ARM saturates
+	// it, x86 wraps it - and either way the timer used to fire early. Compare in float instead:
+	// at this size float still resolves 2^-24 of the interval (~0.2 ms in an hour), an infinite
+	// threshold never elapses, and there is no float->int64 cast, which the firmware's
+	// checkIllegalConversion post-build step rejects.
+	return static_cast<float>(delta) > thresholdNt;
 }
 
 float Timer::getElapsedSeconds() const {
