@@ -142,6 +142,9 @@ ifeq ($(SANITIZE),yes)
   else
       USE_CPPOPT += -fsanitize=address -fsanitize=bounds -fno-sanitize-recover=all
   endif
+  # UBSan, plus float->integer overflow: GCC's -fsanitize=undefined does NOT include
+  # float-cast-overflow, and that is exactly how Timer::hasElapsedUs() hid a wrong cast
+  USE_CPPOPT += -fsanitize=undefined -fsanitize=float-cast-overflow -fno-sanitize-recover=all
 endif
 
 # Enable this if you want the linker to remove unused code and data
