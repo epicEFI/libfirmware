@@ -27,6 +27,7 @@ To see what is ours: `git log --no-merges upstream/master..master`.
 | `cyclic_buffer`: size 0 let `add()` write past `elements[]` (and `get()` loop forever); `contains()` ignored every slot at or above `currentIndex` once the buffer wrapped; `sum/minValue/maxValue(n)` counted elements twice when `n` exceeded the size | `util/include/rusefi/containers/cyclic_buffer.h`, `util/test/test_cyclic_buffer.cpp` |
 | `fifo_buffer_sync::get()` in `EFI_UNIT_TEST` builds returned `true` with a stale element on an empty queue; it now reports the timeout like the ECU does. First tests for `fifo_buffer` | `util/include/rusefi/containers/fifo_buffer.h`, `util/test/test_fifo_buffer.cpp` |
 | `SANITIZE=yes` adds UBSan and `-fsanitize=float-cast-overflow` (GCC's `-fsanitize=undefined` leaves that one out - it is how the Timer cast hid) | `Makefile` |
+| `atoff()`: the error guards compared `absI(result) == ATOI_ERROR_CODE` - a magnitude against a negative sentinel - so they could never fire and invalid text parsed as `-3.11223344e8` instead of NaN (bypassing cli_registry's `isnan()` rejection of bad console floats); the fraction of a negative value was also added unsigned (`"-42.5"` -> `-41.5`). Direct sentinel comparisons and a sign-carrying result now | `util/src/efistringutil.cpp`, `util/test/test_efistringutil.cpp` |
 | upstream sync tooling and this file | `tools/sync_upstream.sh`, `.github/workflows/sync-upstream.yaml`, `EPIC_FORK.md` |
 
 Add a row whenever you add a change here, so whoever resolves the next sync conflict knows

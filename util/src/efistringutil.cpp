@@ -61,21 +61,30 @@ namespace rusefi::stringutil {
 		if (dotIndex == -1) {
 			// just an integer
 			int result = safe_atoi(string);
-			if (absI(result) == ATOI_ERROR_CODE) {
+			if (result == ATOI_ERROR_CODE) {
 				return (float) NAN;
 			}
 			return (float) result;
 		}
 		// todo: this needs to be fixed
 		string[dotIndex] = 0;
-		int integerPart = safe_atoi(string);
-		if (absI(integerPart) == ATOI_ERROR_CODE) {
+		char* intPart = string;
+		while (is_whitespace(*intPart)) {
+			intPart++;
+		}
+		bool negative = false;
+		if (*intPart == '-' || *intPart == '+') {
+			negative = *intPart == '-';
+			intPart++;
+		}
+		int integerPart = safe_atoi(intPart);
+		if (integerPart == ATOI_ERROR_CODE) {
 			return (float) NAN;
 		}
 		string += (dotIndex + 1);
 		int decimalLen = efiStrlen(string);
 		int decimal = safe_atoi(string);
-		if (absI(decimal) == ATOI_ERROR_CODE) {
+		if (decimal == ATOI_ERROR_CODE) {
 			return (float) NAN;
 		}
 		float divider = 1.0;
@@ -83,6 +92,9 @@ namespace rusefi::stringutil {
 		for (int i = 0; i < decimalLen; i++) {
 			divider = divider * 10.0;
 		}
-		return integerPart + decimal / divider;
+		float result = integerPart + decimal / divider;
+		// the fractional part is parsed unsigned; the overall sign comes from the
+		// value's own sign, so a fraction of a negative number must stay negative
+		return negative ? -result : result;
 	}
 }
