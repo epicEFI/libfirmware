@@ -45,9 +45,17 @@ struct expected {
 	};
 
 	// Implicit constructor to construct in the invalid state
-	constexpr expected(const unexpected_t&) : Valid(false), Code{UnexpectedCode::Unknown} {}
+	// Value{} zeroes the whole union first: initializing only Code would leave
+	// the upper bytes of Value indeterminate, and those stale bytes are then
+	// COPIED by assignment - an invalidated sensor could print a garbage float
+	// through showInfo. Code aliases byte 0, so Unknown stays Unknown.
+	constexpr expected(const unexpected_t&) : Valid(false), Value{} {
+		Code = UnexpectedCode::Unknown;
+	}
 
-	constexpr expected(UnexpectedCode code) : Valid(false), Code{code} {}
+	constexpr expected(UnexpectedCode code) : Valid(false), Value{} {
+		Code = code;
+	}
 
 	// Implicit constructor to convert from TValue (for valid values, so an expected<T> behaves like a T)
 	constexpr expected(TValue validValue)
