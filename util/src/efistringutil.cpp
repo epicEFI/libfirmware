@@ -90,7 +90,7 @@ namespace rusefi::stringutil {
 		float divider = 1.0;
 		// todo: reuse 'pow10' function which we have anyway
 		for (int i = 0; i < decimalLen; i++) {
-			divider = divider * 10.0;
+			divider = divider * 10.0f;
 		}
 		float result = integerPart + decimal / divider;
 		// the fractional part is parsed unsigned; the overall sign comes from the
